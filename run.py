@@ -1,51 +1,24 @@
 import argparse
 import jax
-
-from datasets import MNISTDataset, GaussianMixture4, GaussianMixture25, LinearFunctionDataset, TanhDataset, ReLUDataset
-from datasets import SmallGANDataset, SwissRollDataset, CheckerboardDataset, TwoMoonsDataset, ToeplitzDataset
-from datasets import GeneratorDataset, SparseCodingDataset, CircleDataset, FlowDataset, NoisyFlowDataset, SquareDataset
-from datasets import SphereDataset, GaussianDataset, LinearGaussianDataset, GraphDataset, SigmoidDataset
-from wgan import WGAN
-from gin import GINModel
-from mlp import MLPModel, MLPReg
-from nice import NICEModel
-from vae import VAEModel, ACVAEModel, VAEModel_2Stage, gammaVAEModel, MLP_ACVAEModel, SqVAEModel
-from real_nvp import RealNVPModel, RealNVPRegressionModel, RealNVPWassersteinModel, ConvNVPModel
-from real_nvp import ConvNVPRegressionModel, RealNVPImageModel
+from datasets import SphereDataset, LinearGaussianDataset, SigmoidDataset
+from vae import VAEModel
 from utils import make_output_dir
-from linear_partition import PartitionedLinearModel, PartitionedLinearRegressionModel
 
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('name', help="The name of the experiment and output directory.")
-    parser.add_argument('--model', dest='model', default='WGAN',
-                        choices=["WGAN", "GIN", "MLP", "NICE", "RealNVP", "PLN", "PLNR", "RealNVPR", "RealNVPW",
-                                 "MLPR", "ConvNVP", "ConvNVPR", "RealNVPImage", "VAE", "ACVAE", "MLP_ACVAE",
-                                 "2Stage_VAE", "gammaVAE", "SqVAE"])
     parser.add_argument('--num_batches', dest='num_batches', type=int, default=15000,
                         help="Number of batches to train on.")
     parser.add_argument('--num_epochs', dest='num_epochs', type=int, default=10000)
     parser.add_argument('--batch_size', dest='batch_size', type=int, default=100)
     parser.add_argument('-lr', '--learning_rate', dest='learning_rate', type=float, default=0.0001)
-    parser.add_argument('--n_critic', dest='n_critic', type=int, default=5)
-    parser.add_argument('--n_passes', dest='n_passes', type=int, default=1)
-    parser.add_argument('--n_conv', type=int, default=8)
-    # TODO: handle these appropriately in the code
-    parser.add_argument('--generator_num_layers', type=int, dest='generator_num_layers', default=5)
     parser.add_argument('--padding_dim', type=int, dest='padding_dim', default=0)
     parser.add_argument('-ow', dest='overwrite', action='store_true')
     parser.add_argument('--dataset', dest='dataset', default='4gaussian',
-                        choices=["mnist", "ReLU", "4gaussian", "25gaussian", "linear", "tanh", "small_gan",
-                                 "swissroll", "2moons", "checkerboard", "toeplitz", "generator", "sparse_coding",
-                                 "circle", "flow", "noisyflow", "square", "sphere", "gaussian", "linear_gaussian", "graph",
-                                 "sigmoid"])
+                        choices=["sphere", "linear_gaussian", "sigmoid"])
     parser.add_argument('--layer_sizes', dest='layer_sizes', default='512|512', help="Specify layer sizes for MLP (possibly others later) as integers separated by pipes. Example: 512|512|512")  # NOQA
-    parser.add_argument('--dataset_layer_sizes', dest='dataset_layer_sizes', default='128|128', help="Specify layer sizes for MLP (possibly others later) as integers separated by pipes. Example: 512|512|512")  # NOQA
-    parser.add_argument('--dataset_n_passes', type=int, default=4)
     parser.add_argument('--encoder_layer_sizes', dest='encoder_layer_sizes', default='512|512', help="Specify layer sizes for MLP (possibly others later) as integers separated by pipes. Example: 512|512|512")  # NOQA
-    parser.add_argument('--latent_distribution', dest='latent_distribution', default='gaussian',
-                        choices=['gaussian', 'logistic'])
     parser.add_argument('--latent_dim', dest='latent_dimension', type=int, default=100)
     # parser.add_argument('-e', '--epsilon', dest='epsilon', type=float, default=0.01)
     parser.add_argument('-nojit', dest='nojit', action='store_true', help="Disables just-in-time compilation for debugging")  # NOQA
@@ -53,80 +26,32 @@ def parse_arguments():
     parser.add_argument('-ds', '--dataset_seed', dest='dataset_seed', type=int, default=69)
     parser.add_argument('--state_dict', dest='state_dict', default=None)
     parser.add_argument('--data_fn', dest="data_fn", default=None)
-    parser.add_argument('--critic_layer_sizes', dest='critic_layer_sizes', default='256|256|256', help="Specify layer sizes for critic as integers separated by pipes. Example: 512|512|512")  # NOQA
-    parser.add_argument('-cfd', '--copy_flow_dataset', dest='copy_flow_dataset', action='store_true')
     parser.add_argument('-ws', '--warm_start', action='store_true')
-
     parser.add_argument('-ii', '--initialize_inverse', action='store_true')
     parser.add_argument('-ufc', '--use_fred_covariance', action='store_true')
-    parser.add_argument('-bn', '--batch_norm', dest='batch_norm', action='store_true')
-    parser.add_argument('-mult', '--mult_layer', dest='mult_layer', action='store_true')
-    parser.add_argument('-notqdm', dest="tqdm", action="store_false")
-    parser.add_argument('-tbo', '--train_bias_only', dest='train_bias_only', action='store_true')
     parser.add_argument('-e', '--epsilon', type=float, default=0.)
-    parser.add_argument('-ig', dest='if_grid', action='store_true')
     parser.add_argument('-tdv', dest='tunable_decoder_var', action='store_true')
     parser.add_argument('-dn', '--dataset_noise', type=float, default=0.)
     parser.add_argument('-dd', '--dataset_dimension', type=int, default=3)
     parser.add_argument('-wsl', '--warm_start_linear', action='store_true')
     parser.add_argument('-did', '--dataset_intrinsic_dimension', type=int, default=3)
     parser.add_argument('-off', '--latent_off_dimension', type=int, default=1)
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.model="VAE"
+    args.latent_distribution = 'gaussian'
+    args.tqdm = True
+    return args
 
 
-def get_dataset(name, seed, padding_dimension, batch_size, layer_sizes, args):
-    if name == "mnist":
-        return MNISTDataset(seed, batch_size)
-    elif name == "4gaussian":
-        return GaussianMixture4(seed, padding_dimension=padding_dimension)
-    elif name == "25gaussian":
-        return GaussianMixture25(seed, padding_dimension=padding_dimension)
-    elif name == "linear":
-        return LinearFunctionDataset(seed, dimension=padding_dimension)
-    elif name == "swissroll":
-        return SwissRollDataset(seed)
-    elif name == "2moons":
-        return TwoMoonsDataset(seed, padding_dimension, noise_level=args.dataset_noise)
-    elif name == "checkerboard":
-        return CheckerboardDataset(seed)
-    elif name == 'tanh':
-        return TanhDataset(seed, dimension=padding_dimension)
-    elif name == 'ReLU':
-        return ReLUDataset(seed, dimension=padding_dimension)
-    elif name == 'small_gan':
-        return SmallGANDataset(seed, dimension=padding_dimension)
-    elif name == 'toeplitz':
-        return ToeplitzDataset(seed, dimension=padding_dimension)
-    elif name == 'generator':
-        return GeneratorDataset(seed, dimension=padding_dimension, layer_sizes=layer_sizes)
-    elif name == 'sparse_coding':
-        return SparseCodingDataset(seed, latent_dimension=padding_dimension, sparsity=args.sparsity)
-    elif name == 'circle':
-        return CircleDataset(seed)
-    elif name == 'flow':
-        return FlowDataset(seed, dimension=padding_dimension, layer_sizes=layer_sizes, n_passes=args.dataset_n_passes)
-    elif name == 'noisyflow':
-        return NoisyFlowDataset(seed, dimension=padding_dimension, layer_sizes=layer_sizes,
-                                n_passes=args.dataset_n_passes, epsilon=args.dataset_noise)
-    elif name == "square":
-        return SquareDataset(seed, dimension=padding_dimension, layer_sizes=layer_sizes, epsilon=args.dataset_noise)
-    elif name == "sphere":
+def get_dataset(name, seed, padding_dimension, batch_size, args):
+    if name == "sphere":
         return SphereDataset(seed, dimension=args.dataset_dimension, padding_dimension=args.padding_dim)
-    elif name == "graph":
-        return GraphDataset(seed, dimension=args.dataset_dimension, padding_dimension=args.padding_dim)
-    elif name == "gaussian":
-        return GaussianDataset(seed, dimension=args.dataset_dimension, padding_dimension=args.padding_dim, noise_level=args.dataset_noise)
     elif name == "linear_gaussian":
-<<<<<<< HEAD
         return LinearGaussianDataset(seed, dimension=args.dataset_dimension, intrinsic_dimension=args.dataset_intrinsic_dimension,
                                      padding_dimension=args.padding_dim, var_added=args.dataset_noise)
 
-=======
-        return LinearGaussianDataset(seed, dimension=args.dataset_dimension, padding_dimension=args.padding_dim,
-                                     var_added=args.dataset_noise)
     elif name == "sigmoid":
         return SigmoidDataset(seed, dimension=args.dataset_dimension, padding_dimension=args.padding_dim)
->>>>>>> fb9c07fe7914aa6056f4d0766fd66ba1f5c35124
 
 def get_model(args, dataset, output_dir):
     if args.model == "WGAN":
@@ -426,7 +351,7 @@ def main(args):
     output_dir = make_output_dir(args.name, args.overwrite, args)
     if args.model != 'MLP':
         dataset = get_dataset(args.dataset, args.dataset_seed, args.padding_dim, args.batch_size,
-                              args.dataset_layer_sizes, args)
+                              args)
     model = get_model(args, dataset, output_dir)
 
     model.train()
