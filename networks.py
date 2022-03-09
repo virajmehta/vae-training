@@ -68,7 +68,7 @@ class VAE(flax.nn.Module):
             mu = enc_out
             epsilon_p = self.param('epsilon_p', (z1.shape[-1],), jax.nn.initializers.ones)
             if tunable_decoder_var:
-                epsilon = self.param('epsilon', (1,), jax.nn.initializers.ones) 
+                epsilon = self.param('epsilon', (1,), jax.nn.initializers.ones) * epsilon
             logvar_e = epsilon_p
         stdevs = jnp.exp(logvar_e / 2)
         samples = mu + stdevs * z1

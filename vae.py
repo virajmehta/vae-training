@@ -58,7 +58,7 @@ class VAEModel(GenerativeModel):
                                  decoder_layer_sizes=decoder_layer_sizes, tunable_decoder_var=tunable_decoder_var,
                                  dataset_name = dataset_name)
         _, initial_params = vae_module.init_by_shape(vae_key, [(data_size,), (latent_dimension,), (data_size,)])
-        initial_params['epsilon'] = initial_params['epsilon'] * self.epsilon
+        #initial_params['epsilon'] = initial_params['epsilon'] * self.epsilon
         if warm_start:
             if dataset_name == "sigmoid":
                 assert self.latent_dimension == dataset.dimension
