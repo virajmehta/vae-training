@@ -84,28 +84,12 @@ class SphereDataset(DistributionDataset):
         return samps
 
     def plot_batch(self, batch, fn):
+        batch_norm = jnp.linalg.norm(batch, axis = 1)
+        bins = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1., 1.1, 1.2]
+        plt.hist(batch_norm, bins = bins)
+        plt.savefig(fn)
+        plt.close()
 
-        if self.dim == 2:
-            plt.scatter(batch[:, 0], batch[:, 1])
-            plt.title("Sphere with dimension " + str(self.dim) + " and padding " + str(self.padding_dim))
-            plt.savefig(fn)
-            plt.close()
-
-            #elif self.dim == 3:
-            #    fig = plt.figure()
-            #    ax = fig.add_subplot(projection='3d')
-            #    ax.scatter(batch[:, 0], batch[:, 1], batch[:, 2])
-            #    ax.set_title("Sphere with dimension " + str(self.dim) + " and padding " + str(self.padding_dim))
-            #    fig.savefig(fn)
-        """
-        else:
-            plt.plot(np.sort(np.linalg.norm(batch, axis=1)))
-            plt.ylabel('Norm of points')
-            plt.title("Sphere with dimension " + str(self.dim) + " and padding " + str(self.padding_dim))
-            plt.savefig(fn)
-            plt.close()
-        #plt.show(block=False)
-        """
 
     def save(self, fn):
         pass
@@ -277,7 +261,16 @@ class SigmoidDataset(DistributionDataset):
         return {"Squared Norm of Padding Dimensions": mse, "Squared Norm of Manifold Dimension": manifold_error}
 
     def plot_batch(self, batch, fn):
-        pass
+        size = batch.shape[0]
+        true_batch = self.get_batch(size)
+        x = jnp.dot(batch[:, :self.dim], self.A)
+        y = batch[:, self.dim]
+        plt.scatter(x, y)
+        x_org = jnp.dot(true_batch[:, :self.dim], self.A)
+        y_org = true_batch[:, self.dim]
+        plt.scatter(x_org, y_org)
+        plt.savefig(fn)
+        plt.close()
 
     def save(self, fn):
         pass
